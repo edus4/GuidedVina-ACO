@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+title: GuidedVina-ACO
+message: >-
+  If you use this software, please cite it, and cite the underlying docking
+  engine separately. This repository is a control layer and does not implement
+  a docking algorithm.
+type: software
+authors:
+  - family-names: Alagöz
+    given-names: Eda
+    affiliation: Ege University, Faculty of Engineering, Department of Bioengineering
+repository-code: https://github.com/edus4/GuidedVina-ACO
+license: MIT
+version: 0.2.0
+keywords:
+  - molecular docking
+  - biased docking
+  - AutoDock Vina
+  - ant colony optimization
+  - pose prediction

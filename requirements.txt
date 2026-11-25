@@ -1,0 +1,5 @@
+numpy>=1.21
+# Recommended: enables symmetry-corrected RMSD via optimal atom assignment
+scipy>=1.7
+# Optional: graph-aware symmetry-corrected RMSD and exact rotatable-bond counts
+# rdkit>=2022.9

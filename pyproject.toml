@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "guidedvina-aco"
+version = "0.2.0"
+description = "Flexibility-aware search-budget selection and staged biased optimization for Vina-family docking engines"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Eda Alagöz" }]
+keywords = ["molecular-docking", "autodock-vina", "biased-docking", "virtual-screening"]
+dependencies = ["numpy>=1.21"]
+
+[project.optional-dependencies]
+rmsd = ["scipy>=1.7"]
+chem = ["rdkit>=2022.9"]
+dev = ["pytest>=7.0", "scipy>=1.7"]
+
+[project.scripts]
+guidedvina = "guidedvina.cli:main"
+guidedvina-benchmark = "guidedvina.benchmark_cli:main"
+
+[tool.setuptools]
+packages = ["guidedvina"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

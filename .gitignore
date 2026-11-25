@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+benchmark_results/
+_prepared_pdbqt/
+_guidedvina_work/
+*.dlg
+*.log
