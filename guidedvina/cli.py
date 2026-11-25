@@ -27,8 +27,14 @@ def build_parser() -> argparse.ArgumentParser:
                    metavar=("SX", "SY", "SZ"))
     p.add_argument("--out", type=Path, default=Path("docked_guided.pdbqt"))
 
-    p.add_argument("--engine-bin", default="vina-aco",
-                   help="Docking binary (default: vina-aco)")
+    p.add_argument("--engine-bin", default="vina_aco",
+                   help="Docking binary (default: vina_aco)")
+    p.add_argument("--search-method", choices=["aco", "mc"], default=None,
+                   help="aco = ant colony (Vina-ACO), mc = upstream Vina Monte Carlo")
+    p.add_argument("--aco-preset", choices=["fast", "balanced", "accurate"], default=None,
+                   help="Override the ACO parameter set chosen by the selector")
+    p.add_argument("--bias-target", choices=["map", "don", "acc", "apolar"], default="map",
+                   help="Which atom-type maps the bias well is added to")
     p.add_argument("--critical-residues", nargs="*", default=None,
                    metavar="SPEC",
                    help="Bias anchor residues: 12, A:12, A:12-18 (chain-qualified is safer)")
@@ -85,7 +91,10 @@ def main(argv=None) -> int:
         rmsd_cutoff=args.rmsd_cutoff,
         rmsd_method=args.rmsd_method,
         use_bias=not args.no_bias,
+        bias_target=args.bias_target,
         stages_override=args.stages,
+        search_method=args.search_method,
+        aco_preset=args.aco_preset,
         cpu=args.cpu,
         dry_run=args.dry_run,
         timeout=args.timeout,

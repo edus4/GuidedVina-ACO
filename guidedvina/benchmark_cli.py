@@ -18,7 +18,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--manifest", type=Path, required=True)
     p.add_argument("--out-dir", type=Path, default=Path("benchmark_results"))
-    p.add_argument("--engine-bin", default="vina-aco")
+    p.add_argument("--engine-bin", default="vina_aco")
+    p.add_argument("--search-method", choices=["aco", "mc"], default=None)
+    p.add_argument("--aco-preset", choices=["fast", "balanced", "accurate"], default=None)
+    p.add_argument("--bias-target", choices=["map", "don", "acc", "apolar"], default="map")
     p.add_argument("--seeds", type=int, nargs="+", default=[1, 2, 3],
                    help="Seeds per arm (>=3 recommended; docking is stochastic)")
     p.add_argument("--arms", nargs="+", default=["baseline", "guided"],
@@ -58,6 +61,9 @@ def main(argv=None) -> int:
         allow_leaky_anchor=args.allow_leaky_anchor,
         allow_rb_estimate=args.allow_rb_estimate,
         use_bias=not args.no_bias,
+        bias_target=args.bias_target,
+        search_method=args.search_method,
+        aco_preset=args.aco_preset,
         cpu=args.cpu,
         dry_run=args.dry_run,
         timeout=args.timeout,

@@ -191,8 +191,13 @@ def build_schedule(plan: SearchPlan) -> List[Stage]:
             Stage(
                 index=i,
                 bias_weight=nominal_weight(i, n, plan),
-                exhaustiveness=plan.exhaustiveness if i == 0 else max(
-                    4, int(round(plan.exhaustiveness / 2))
+                # Later stages refine rather than explore, so they get half the
+                # search breadth, never more than stage 0. Under ACO this is a
+                # colony count, where 1 is a legitimate value.
+                exhaustiveness=(
+                    plan.exhaustiveness if i == 0
+                    else max(1, min(plan.exhaustiveness,
+                                    int(round(plan.exhaustiveness / 2))))
                 ),
                 local_only=bool(is_last and n > 1),
             )

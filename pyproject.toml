@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "guidedvina-aco"
-version = "0.2.0"
+version = "0.3.0"
 description = "Flexibility-aware search-budget selection and staged biased optimization for Vina-family docking engines"
 readme = "README.md"
 requires-python = ">=3.9"

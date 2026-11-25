@@ -11,7 +11,7 @@ authors:
     affiliation: Ege University, Faculty of Engineering, Department of Bioengineering
 repository-code: https://github.com/edus4/GuidedVina-ACO
 license: MIT
-version: 0.2.0
+version: 0.3.0
 keywords:
   - molecular docking
   - biased docking

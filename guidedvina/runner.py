@@ -42,10 +42,17 @@ class DockingOutcome:
             "buriedness": self.pocket.buriedness if self.pocket else "",
             "selector": self.plan.selector if self.plan else "",
             "regime": self.plan.regime if self.plan else "",
+            "search_method": self.plan.search_method if self.plan else "",
+            "aco_preset": (self.plan.aco_preset or "") if self.plan else "",
             "exhaustiveness": self.plan.exhaustiveness if self.plan else "",
-            "stages": len(stages),
+            "stages": len([s for s in stages if s.stage.index >= 0]),
             "initial_bias_weight": self.plan.initial_bias_weight if self.plan else "",
-            "bias_applied": any(s.bias_file for s in stages),
+            "bias_backend": run.bias_backend if run else "",
+            "bias_applied": any(s.biased for s in stages),
+            "bias_target": self.plan.bias_target if self.plan else "",
+            "voxels_biased": sum(
+                int((s.bias_detail or {}).get("voxels_changed", 0) or 0) for s in stages
+            ),
             "anchor_source": self.anchor.source if self.anchor else "none",
             "guardrail_triggered": any(s.stage.guardrail_applied for s in stages),
             "final_diversity": next(
@@ -80,11 +87,15 @@ def dock_once(
     rmsd_cutoff: float = 2.0,
     rmsd_method: str = "auto",
     use_bias: bool = True,
+    bias_target: str = "map",
     stages_override: Optional[int] = None,
+    search_method: Optional[str] = None,
+    aco_preset: Optional[str] = None,
     cpu: Optional[int] = None,
     dry_run: bool = False,
     timeout: Optional[float] = None,
     work_dir: Optional[Path] = None,
+    base_map_prefix: Optional[Path] = None,
 ) -> DockingOutcome:
     out = DockingOutcome(
         complex_id=complex_id, arm=arm, seed=seed,
@@ -121,8 +132,15 @@ def dock_once(
                 plan.initial_bias_weight = 0.0
             if stages_override:
                 plan.stages = int(stages_override)
+            plan.bias_target = bias_target
             if anchor is not None:
                 out.warnings.extend(anchor.warnings)
+        if search_method:
+            plan.search_method = search_method
+            if search_method != "aco":
+                plan.aco_preset = None
+        if aco_preset and plan.search_method == "aco":
+            plan.aco_preset = aco_preset
         out.plan, out.anchor = plan, anchor
 
         rec_prepared = prepare_structure(Path(receptor), "receptor", work_dir, skip=dry_run)
@@ -138,6 +156,7 @@ def dock_once(
             anchor=anchor.xyz if anchor else None,
             arm=arm, seed=seed, cpu=cpu,
             work_dir=work_dir, dry_run=dry_run, timeout=timeout,
+            base_map_prefix=base_map_prefix,
         )
         out.run = run
         if run.error:

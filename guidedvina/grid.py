@@ -11,30 +11,31 @@ from typing import Dict, List
 
 from .planner import SearchPlan
 
-#: (exhaustiveness, stages, initial_bias_weight, annealing_tau, anchor_radius)
+#: (aco_preset, colonies, stages, initial_bias_weight, annealing_tau, anchor_radius)
 DEFAULT_GRID = (
-    (8, 1, 0.0, 1.0, 0.0),
-    (16, 1, 0.0, 1.0, 0.0),
-    (32, 1, 0.0, 1.0, 0.0),
-    (8, 3, 0.45, 0.35, 4.0),
-    (16, 3, 0.65, 0.45, 5.0),
-    (16, 3, 0.80, 0.60, 6.0),
-    (32, 3, 0.65, 0.45, 5.0),
+    ("fast", 1, 1, 0.0, 1.0, 0.0),
+    ("balanced", 1, 1, 0.0, 1.0, 0.0),
+    ("balanced", 4, 1, 0.0, 1.0, 0.0),
+    ("accurate", 1, 1, 0.0, 1.0, 0.0),
+    ("fast", 1, 3, 0.45, 0.35, 4.0),
+    ("balanced", 1, 3, 0.65, 0.45, 5.0),
+    ("balanced", 1, 3, 0.80, 0.60, 6.0),
+    ("accurate", 1, 3, 0.65, 0.45, 5.0),
 )
 
 
-def config_id(exh: int, stages: int, w0: float) -> str:
-    return f"exh{exh}_st{stages}_w{w0:.2f}"
+def config_id(preset: str, colonies: int, stages: int, w0: float) -> str:
+    return f"{preset}_col{colonies}_st{stages}_w{w0:.2f}"
 
 
 def grid_plans(grid=DEFAULT_GRID) -> List[SearchPlan]:
     plans = []
-    for exh, stages, w0, tau, radius in grid:
+    for preset, colonies, stages, w0, tau, radius in grid:
         plans.append(
             SearchPlan(
-                regime=config_id(exh, stages, w0),
+                regime=config_id(preset, colonies, stages, w0),
                 selector="grid",
-                exhaustiveness=exh,
+                exhaustiveness=colonies,
                 num_modes=9,
                 max_evals=None,
                 stages=stages,
@@ -43,6 +44,8 @@ def grid_plans(grid=DEFAULT_GRID) -> List[SearchPlan]:
                 anchor_radius=radius,
                 diversity_floor_angstrom=1.2 if w0 > 0 else 0.0,
                 notes=["sweep configuration for selector training"],
+                search_method="aco",
+                aco_preset=preset,
             )
         )
     return plans

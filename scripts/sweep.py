@@ -31,7 +31,7 @@ from guidedvina.runner import dock_once                        # noqa: E402
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--manifest", type=Path, required=True)
-    p.add_argument("--engine-bin", default="vina-aco")
+    p.add_argument("--engine-bin", default="vina_aco")
     p.add_argument("--out-dir", type=Path, default=Path("sweep_results"))
     p.add_argument("--seeds", type=int, nargs="+", default=[1, 2, 3])
     p.add_argument("--rmsd-cutoff", type=float, default=2.0)
@@ -80,10 +80,13 @@ def main() -> int:
                     dry_run=args.dry_run,
                     timeout=args.timeout,
                     work_dir=args.out_dir / "work" / row.complex_id,
+                    base_map_prefix=args.out_dir / "work" / row.complex_id / "basemaps",
                 )
                 rec = outcome.to_record(rmsd_cutoff=args.rmsd_cutoff)
                 rec["config_id"] = plan.regime
                 rec["cfg_exhaustiveness"] = plan.exhaustiveness
+                rec["cfg_search_method"] = plan.search_method
+                rec["cfg_aco_preset"] = plan.aco_preset or ""
                 rec["cfg_stages"] = plan.stages
                 rec["cfg_initial_bias_weight"] = plan.initial_bias_weight
                 rec["cfg_annealing_tau"] = plan.annealing_tau

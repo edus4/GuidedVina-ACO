@@ -1,6 +1,7 @@
 # GuidedVina-ACO
 
-A control layer for Vina-family molecular docking engines. It does two things:
+A control layer for [Vina-ACO](https://github.com/CinarogluLab/Vina-ACO) and
+other Vina-family docking engines. It does two things:
 
 1. **Chooses a search budget** from ligand flexibility and pocket descriptors,
    instead of applying one preset to every ligand.
@@ -8,6 +9,13 @@ A control layer for Vina-family molecular docking engines. It does two things:
    an attractive potential at a pocket sub-region you nominate, and the bias is
    reduced stage by stage until the final stage runs unbiased — so the reported
    pose and score are not artefacts of the bias.
+
+Vina-ACO has no bias option: it is AutoDock Vina 1.2.7 with an ant-colony
+global search, and nothing in its command line accepts a bias specification.
+Bias is therefore applied **through the affinity maps** — the engine writes
+them with `--write_maps`, this package adds an attractive well at the anchor,
+and the biased stage docks against the modified grids with `--maps`. Same idea
+as AutoDock-Bias, done outside the binary, so no C++ changes are needed.
 
 The point of the second mechanism is to recover poses that a global search
 misses on flexible ligands, without locking the search into a wrong local
@@ -22,7 +30,9 @@ never applied is worse than no wrapper at all.
 |---|---|
 | Ligand/pocket descriptors from `.pdbqt`/`.pdb` | implemented |
 | Chain-aware anchor from nominated residues | implemented |
-| Bias parameter file (`.bpf`) emission, passed to the engine | implemented |
+| Map-based bias: well added to AutoGrid `.map` files, docked with `--maps` | implemented |
+| Typed bias (`don` / `acc` / `apolar` maps only, or all) | implemented |
+| Bias parameter file (`.bpf`) for forks that take `--bias` | implemented, unused by Vina-ACO |
 | Staged annealing with the final stage unbiased | implemented |
 | Pose-diversity guardrail measured from engine output | implemented |
 | Paired baseline-vs-guided benchmark over multiple seeds | implemented |
@@ -41,11 +51,19 @@ any accuracy or speedup claim.
 - scipy (recommended): enables assignment-based symmetry handling in RMSD
 - RDKit (optional): graph-symmetry RMSD and exact rotatable-bond counts for
   non-PDBQT ligands
-- A **bias-capable Vina-family binary** for real docking, e.g.
-  [CinarogluLab/Vina-ACO](https://github.com/CinarogluLab/Vina-ACO) or an
-  AutoDock-Bias build. The wrapper reads your binary's `--help` and refuses to
-  run a biased stage if it finds no bias option, rather than silently docking
-  without bias.
+- **Vina-ACO**, built:
+
+  ```bash
+  git clone https://github.com/CinarogluLab/Vina-ACO.git
+  cd Vina-ACO
+  conda env create -f environment.yml && conda activate vina-aco   # Boost etc.
+  ./build.sh                 # -> bin/vina_aco
+  ./bin/vina_aco --version
+  ```
+
+  The wrapper reads the binary's `--help` and works out how it can be biased:
+  a `--bias` option if the fork has one, otherwise `--write_maps`/`--maps`. If
+  it has neither, a biased run is refused rather than quietly docked unbiased.
 - Open Babel (`obabel`) or Meeko, only if you pass `.pdb` instead of `.pdbqt`
 
 ```bash
@@ -75,7 +93,7 @@ planning logic only — never that your binary accepts those commands.
 
 ```bash
 python3 -m guidedvina.cli \
-  --engine-bin /path/to/vina-aco \
+  --engine-bin /path/to/Vina-ACO/bin/vina_aco \
   --receptor receptor.pdbqt \
   --ligand   ligand.pdbqt \
   --center 12.5 -4.2 18.0 --size 20 20 20 \
@@ -83,6 +101,18 @@ python3 -m guidedvina.cli \
   --reference-ligand crystal_ligand.pdbqt \
   --out docked_guided.pdbqt
 ```
+
+Useful switches:
+
+- `--search-method aco|mc` — ant colony (default) or upstream Vina's Monte
+  Carlo. Note that **`--exhaustiveness` means different things in the two**:
+  under ACO it is the number of independent colonies, default 1; under MC it is
+  Vina's exhaustiveness, default 8. The planner sets it as colonies.
+- `--aco-preset fast|balanced|accurate` — overrides the preset the selector
+  picked. The flexibility bands map to `fast` / `balanced` / `accurate`.
+- `--bias-target map|don|acc|apolar` — which atom-type maps get the well.
+  `acc` biases only acceptor maps (`O_A`, `N_A`, `O_DA`, `N_DA`), which pulls
+  an acceptor into the region instead of dragging the whole ligand there.
 
 `--critical-residues` accepts `12`, `A:12`, `A:12B` (insertion code) and
 `A:12-18`. **Qualify the chain.** A bare `12` matches residue 12 in every
@@ -103,7 +133,7 @@ The benchmark runs **both arms on every complex with the same seeds**:
 ```bash
 python3 -m guidedvina.benchmark_cli \
   --manifest my_manifest.csv \
-  --engine-bin /path/to/vina-aco \
+  --engine-bin /path/to/Vina-ACO/bin/vina_aco \
   --out-dir benchmark_results \
   --seeds 1 2 3 4 5
 ```
@@ -113,9 +143,10 @@ three is the minimum and the summary says so when you use fewer.
 
 Outputs in `--out-dir`:
 
-- `runs.csv` — one row per (complex, arm, seed), including which RMSD method
-  was used, whether bias was actually applied, the measured pose diversity,
-  and whether the diversity guardrail fired
+- `runs.csv` — one row per (complex, arm, seed), including the ACO preset,
+  which RMSD method was used, whether bias was actually applied and how many
+  grid voxels it changed, the measured pose diversity, and whether the
+  diversity guardrail fired
 - `summary.json` — paired comparison: success rate per arm, the difference
   with a bootstrap 95% CI, discordant-pair counts, an exact McNemar p-value,
   the median runtime ratio, and a `caveats` list
@@ -147,7 +178,7 @@ documented piecewise prior over flexibility bands. To fit a real one:
 ```bash
 # 1. Run the whole configuration grid on every complex
 python3 scripts/sweep.py --manifest my_manifest.csv \
-  --engine-bin /path/to/vina-aco --out-dir sweep_results --seeds 1 2 3
+  --engine-bin /path/to/Vina-ACO/bin/vina_aco --out-dir sweep_results --seeds 1 2 3
 
 # 2. Fit per-configuration success and runtime models
 python3 scripts/train_selector.py --sweep sweep_results/sweep.csv \
@@ -155,12 +186,13 @@ python3 scripts/train_selector.py --sweep sweep_results/sweep.csv \
 
 # 3. Use it
 python3 -m guidedvina.benchmark_cli --manifest my_manifest.csv \
-  --engine-bin /path/to/vina-aco --selector-model models/selector.json \
-  --out-dir benchmark_results
+  --engine-bin /path/to/Vina-ACO/bin/vina_aco \
+  --selector-model models/selector.json --out-dir benchmark_results
 ```
 
-The selector picks the cheapest configuration whose predicted success is
-within 2% of the best predicted. `train_selector.py` reports cross-validation
+The grid spans the three ACO presets, colony counts and bias levels. The
+selector picks the cheapest configuration whose predicted success is within 2%
+of the best predicted. `train_selector.py` reports cross-validation
 grouped by complex, alongside the oracle and cheapest-configuration rates, so
 you can see whether the model beats "always use the cheap setting".
 
@@ -183,8 +215,9 @@ guidedvina/
   features.py     ligand and pocket descriptors
   anchors.py      residue selectors, chain-aware anchor, leakage guard
   planner.py      HeuristicSelector (priors) and TrainedSelector (fitted)
-  bias.py         .bpf emission, annealing schedule, measured pose diversity
-  engine.py       binary capability probing, staged execution
+  bias.py         annealing schedule, measured pose diversity, .bpf emission
+  maps.py         AutoGrid .map I/O and the attractive well added to the grids
+  engine.py       capability probing, map writing, staged execution
   prepare.py      .pdb -> .pdbqt conversion via Open Babel or Meeko
   rmsd.py         symmetry-corrected RMSD with explicit method labelling
   stats.py        paired bootstrap CI and exact McNemar test
@@ -204,9 +237,16 @@ docs/METHOD.md      what each mechanism does and why
 - Annealing is implemented as a sequence of docking runs, because Vina-family
   engines expose no hook to vary bias within one run. Each stage is a fresh
   search seeded from the previous stage's best pose.
-- The bias is a single spherical well at one anchor. Multi-point and
-  pharmacophore-typed bias (`don`/`acc`/`aro`) are supported by the file
-  format and by `bias.BiasPoint`, but nothing yet constructs them.
+- Each biased stage rewrites the full map set, which costs disk and I/O. The
+  unbiased base maps are computed once per complex and reused.
+- The bias is a single spherical well at one anchor. The machinery supports
+  several points, but nothing yet constructs a multi-point pharmacophore.
+- Vina's atom typing has no aromatic class, so bias can target donors,
+  acceptors or hydrophobic atoms, but not aromatics specifically.
+- Voxels already above +2 kcal/mol are left alone, so the well cannot carve a
+  binding site into the receptor interior. A well placed entirely inside the
+  protein therefore changes nothing — and is reported as an error rather than
+  docked unbiased.
 - Converting `.pdb` to `.pdbqt` changes atom ordering. Prepare the reference
   and docked ligands with the same tool, or rely on the symmetry-corrected
   RMSD methods rather than `ordered`.
@@ -221,10 +261,12 @@ python3 -m pytest -q
 ```
 
 The suite runs the whole pipeline against `tests/stub_engine.py`, a fake
-binary that advertises a real Vina-style `--help` and writes multi-model
-output. Among other things it asserts that `--bias` reaches the command line,
-that the baseline arm sends none, and that a binary without a bias option
-causes a refusal rather than a silent unbiased run.
+binary that advertises Vina-ACO's real `--help`, writes genuine AutoGrid maps
+and reads them back. Among other things it asserts that the biased stage docks
+against modified maps, that the well visibly pulls poses towards the anchor,
+that the final stage is unbiased and uses the receptor, that `--search aco` is
+requested explicitly on every stage, and that an engine with neither bias
+mechanism causes a refusal rather than a silent unbiased run.
 
 ## Citing
 

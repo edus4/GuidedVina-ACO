@@ -116,6 +116,9 @@ def run_benchmark(
     allow_leaky_anchor: bool = False,
     allow_rb_estimate: bool = False,
     use_bias: bool = True,
+    bias_target: str = "map",
+    search_method: Optional[str] = None,
+    aco_preset: Optional[str] = None,
     cpu: Optional[int] = None,
     dry_run: bool = False,
     timeout: Optional[float] = None,
@@ -155,10 +158,17 @@ def run_benchmark(
                     rmsd_cutoff=rmsd_cutoff,
                     rmsd_method=rmsd_method,
                     use_bias=use_bias,
+                    bias_target=bias_target,
+                    search_method=search_method,
+                    aco_preset=aco_preset,
                     cpu=cpu,
                     dry_run=dry_run,
                     timeout=timeout,
                     work_dir=out_dir / "work" / row.complex_id,
+                    # The unbiased maps depend on receptor, box and ligand
+                    # atom types only, so they are computed once per complex
+                    # and reused by every biased stage of every seed.
+                    base_map_prefix=out_dir / "work" / row.complex_id / "basemaps",
                 )
                 outcomes.append(outcome)
                 rec = outcome.to_record(rmsd_cutoff=rmsd_cutoff)
@@ -197,6 +207,7 @@ def run_benchmark(
         "seeds": list(seeds),
         "rmsd_cutoff_angstrom": rmsd_cutoff,
         "rmsd_methods_used": methods,
+        "bias_backends_used": sorted({r["bias_backend"] for r in records if r["bias_backend"]}),
         "n_runs": len(records),
         "n_failed_runs": sum(1 for r in records if r["error"]),
         "dry_run": dry_run,
@@ -238,6 +249,11 @@ def _caveats(
         out.append(
             "Bias anchors were derived from reference ligands: these numbers are "
             "leaky and must not be reported as prospective performance."
+        )
+    if any(r.get("bias_backend") == "none" for r in records):
+        out.append(
+            "The engine supports no bias mechanism, so the guided arm tested "
+            "budget selection only."
         )
     if any(not r["bias_applied"] for r in records if r["arm"] == "guided"):
         out.append(

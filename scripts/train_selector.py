@@ -180,7 +180,9 @@ def main() -> int:
         configurations.append({
             "config_id": cfg_id,
             "regime": cfg_id,
-            "exhaustiveness": int(float(first.get("cfg_exhaustiveness", first.get("exhaustiveness", 8)))),
+            "exhaustiveness": int(float(first.get("cfg_exhaustiveness", first.get("exhaustiveness", 1)))),
+            "search_method": first.get("cfg_search_method", "aco") or "aco",
+            "aco_preset": first.get("cfg_aco_preset") or "balanced",
             "stages": int(float(first.get("cfg_stages", 1))),
             "initial_bias_weight": float(first.get("cfg_initial_bias_weight", 0.0)),
             "annealing_tau": float(first.get("cfg_annealing_tau", 0.45)),

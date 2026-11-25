@@ -30,7 +30,7 @@ from .features import LigandFeatures, PocketFeatures
 class SearchPlan:
     regime: str
     selector: str                  # "heuristic" | "trained:<name>"
-    exhaustiveness: int
+    exhaustiveness: int            # with ACO this is the number of colonies
     num_modes: int
     max_evals: Optional[int]
     # Bias schedule parameters (consumed by guidedvina.bias)
@@ -40,6 +40,9 @@ class SearchPlan:
     anchor_radius: float
     diversity_floor_angstrom: float
     notes: List[str]
+    search_method: str = "aco"     # "aco" (ant colony) or "mc" (upstream Vina)
+    aco_preset: Optional[str] = "balanced"   # fast | balanced | accurate
+    bias_target: str = "map"       # map | don | acc | apolar
 
     def to_dict(self) -> Dict[str, object]:
         return asdict(self)
@@ -51,11 +54,14 @@ class SearchPlan:
 # points that scale with box volume relative to a 20x20x20 A reference box.
 _REFERENCE_BOX_VOLUME = 8000.0
 
+# Vina-ACO ships three presets; its own benchmarks put `fast` at high
+# throughput and `accurate` at pose prediction for flexible ligands, so the
+# prior follows that, scaling colonies rather than re-tuning ant parameters.
 _BANDS = (
-    # (max_rb, regime, exhaustiveness, max_evals, stages, w0, tau, anchor_radius)
-    (3, "rigid", 8, None, 2, 0.45, 0.35, 4.0),
-    (8, "moderate", 16, None, 3, 0.65, 0.45, 5.0),
-    (10 ** 9, "flexible", 32, None, 3, 0.80, 0.60, 6.0),
+    # (max_rb, regime, preset, colonies, max_evals, stages, w0, tau, anchor_radius)
+    (3, "rigid", "fast", 1, None, 2, 0.45, 0.35, 4.0),
+    (8, "moderate", "balanced", 2, None, 3, 0.65, 0.45, 5.0),
+    (10 ** 9, "flexible", "accurate", 4, None, 3, 0.80, 0.60, 6.0),
 )
 
 
@@ -68,7 +74,7 @@ class HeuristicSelector:
     def plan(self, ligand: LigandFeatures, pocket: PocketFeatures) -> SearchPlan:
         rb = ligand.rotatable_bonds
         band = next(b for b in _BANDS if rb <= b[0])
-        _, regime, exh, max_evals, stages, w0, tau, radius = band
+        _, regime, preset, exh, max_evals, stages, w0, tau, radius = band
 
         notes: List[str] = [
             "Budgets are documented priors, not fitted values; "
@@ -78,8 +84,8 @@ class HeuristicSelector:
             factor = float(
                 np.clip((pocket.box_volume / _REFERENCE_BOX_VOLUME) ** 0.25, 0.85, 1.35)
             )
-            exh = int(max(8, round(exh * factor)))
-            notes.append(f"exhaustiveness scaled by box-volume factor {factor:.2f}")
+            exh = int(max(1, round(exh * factor)))
+            notes.append(f"colonies scaled by box-volume factor {factor:.2f}")
         if ligand.is_estimated:
             notes.append(
                 "rotatable_bonds was ESTIMATED, so the regime choice is unreliable."
@@ -100,6 +106,8 @@ class HeuristicSelector:
             anchor_radius=radius,
             diversity_floor_angstrom=1.2,
             notes=notes,
+            search_method="aco",
+            aco_preset=preset,
         )
 
 
@@ -171,6 +179,8 @@ class TrainedSelector:
             num_modes=int(cfg.get("num_modes", 9)),
             max_evals=cfg.get("max_evals"),
             stages=int(cfg.get("stages", 3)),
+            search_method=str(cfg.get("search_method", "aco")),
+            aco_preset=cfg.get("aco_preset", "balanced"),
             initial_bias_weight=float(cfg["initial_bias_weight"]),
             annealing_tau=float(cfg.get("annealing_tau", 0.45)),
             anchor_radius=float(cfg.get("anchor_radius", 5.0)),
@@ -182,10 +192,22 @@ class TrainedSelector:
         )
 
 
-def baseline_plan(num_modes: int = 9, exhaustiveness: int = 8) -> SearchPlan:
-    """The unbiased control arm: engine defaults, no bias, single stage."""
+def baseline_plan(
+    num_modes: int = 9,
+    exhaustiveness: int = 1,
+    search_method: str = "aco",
+    aco_preset: str = "balanced",
+) -> SearchPlan:
+    """
+    The unbiased control arm: engine defaults, no bias, single stage.
+
+    Defaults to Vina-ACO's own default search (`--search aco --aco_preset
+    balanced`, one colony), which is the thing the guided arm has to beat.
+    Pass search_method="mc" to compare against upstream Vina's Monte Carlo
+    instead, where the engine's own default exhaustiveness is 8.
+    """
     return SearchPlan(
-        regime="baseline_default",
+        regime=f"baseline_{search_method}_{aco_preset if search_method == 'aco' else 'default'}",
         selector="none",
         exhaustiveness=exhaustiveness,
         num_modes=num_modes,
@@ -196,6 +218,8 @@ def baseline_plan(num_modes: int = 9, exhaustiveness: int = 8) -> SearchPlan:
         anchor_radius=0.0,
         diversity_floor_angstrom=0.0,
         notes=["control arm: engine defaults, no bias applied"],
+        search_method=search_method,
+        aco_preset=aco_preset if search_method == "aco" else None,
     )
 
 

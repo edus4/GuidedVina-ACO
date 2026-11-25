@@ -42,23 +42,60 @@ says so.
 
 ## 3. Bias
 
-A bias parameter file is written and handed to the engine:
+Vina-ACO has no bias option. It is AutoDock Vina 1.2.7 with an ant-colony
+global search; the added options are `--search`, `--aco_preset`,
+`--aco_variant`, `--aco_ants`, `--aco_budget` and relatives, and none of them
+accepts a bias specification. So bias goes in one step earlier, through the
+grids the scoring function reads.
+
+**Map-based bias.** The engine computes affinity maps for the ligand's atom
+types and can write them out:
 
 ```
-x y z Vset r type
-  12.500   -4.200   18.000    -1.30   5.00 map
+vina_aco --receptor r.pdbqt --ligand l.pdbqt --center_x ... --size_x ... \
+         --write_maps base --force_even_voxels --score_only
 ```
 
-`Vset` is an energy offset in kcal/mol applied within radius `r`; negative
-values favour the region. At bias weight `w`, `Vset = -w × 2.0` kcal/mol.
-`type` is `map` for a type-agnostic well; `don`, `acc` and `aro` restrict the
-bias to donors, acceptors or aromatic atoms.
+That produces `base.<type>.map` in AutoGrid format — a header giving SPACING,
+NELEMENTS and CENTER, then one energy per grid point with x varying fastest.
+`--force_even_voxels` is required because the format needs an odd number of
+grid points per axis, and the engine aborts otherwise.
 
-The engine's own `--help` is parsed once to find which spelling of the bias
-option it accepts (`--bias`, `--bias_file`, `--biasfile`). If none is present,
-a biased stage raises `CapabilityError`. Likewise, an ACO build exposing an
-ant-count option gets the search breadth through that option rather than
-through `--exhaustiveness`, since the two are not the same parameter.
+A Gaussian well is then added at the anchor:
+
+```
+ΔE(r) = -depth · exp(-r² / 2σ²),   σ = radius/2,   truncated at 3σ
+```
+
+with `depth = w × 2.0` kcal/mol at bias weight `w`. The biased stage docks
+against the modified grids with `--maps`, which is mutually exclusive with
+`--receptor` — the maps already carry the box.
+
+Two safeguards:
+
+- Voxels whose unbiased energy is already above +2 kcal/mol are skipped. Those
+  points are inside the receptor, and lowering them would carve a binding site
+  into the protein interior.
+- If the well changes no voxel — anchor outside the grid, or entirely buried —
+  that is an error. Docking would otherwise proceed unbiased while the report
+  claimed bias.
+
+**Typed bias.** Map filenames carry Vina's internal atom typing, which encodes
+hydrogen-bonding role: `_D` donor, `_A` acceptor, `_DA` both, `_P` polar
+non-bonding, `_H` hydrophobic. So `--bias-target acc` adds the well only to
+`O_A`, `N_A`, `O_DA` and `N_DA`, pulling an acceptor into the region rather
+than dragging the whole ligand there. Vina's typing has no aromatic class, so
+there is no aromatic target.
+
+**Fallback.** If a fork does expose `--bias` (AutoDock-Bias does), the
+`.bpf` writer in `bias.py` is used instead. If an engine has neither
+mechanism, a biased stage raises `CapabilityError`.
+
+**Search breadth.** Under `--search aco`, `--exhaustiveness` is the number of
+independent colonies and defaults to 1; under Monte Carlo it is Vina's
+exhaustiveness and defaults to 8. Ant counts are `--aco_ants`. The planner
+sets colonies, and `--search aco` is passed on every stage because the engine
+default is `mc`.
 
 ## 4. Annealing
 
@@ -103,8 +140,10 @@ engine's multi-model output; it is not a function of stage index.
 If the two files disagree in element composition, no number is produced and
 the reason is recorded — rather than a NaN that reads as missing data.
 
-**Arms.** `baseline` is engine defaults with no bias; `guided` is the selected
-budget plus the schedule. Both run on every complex with the same seeds, so
+**Arms.** `baseline` is the engine's own default search with no bias
+(`--search aco --aco_preset balanced`, one colony); `guided` is the selected
+preset and colony count plus the bias schedule. Passing `--search-method mc`
+compares against upstream Vina's Monte Carlo instead. Both run on every complex with the same seeds, so
 the comparison is paired and within-complex.
 
 **Statistics.** The unit of analysis is the complex. Per complex, each arm is
@@ -119,12 +158,14 @@ so.
 ## 6. Budget selection
 
 `HeuristicSelector` is a prior: flexibility bands at ≤3, 4–8 and >8 rotatable
-bonds, with exhaustiveness scaled by `(box volume / 8000 Å³)^0.25` clamped to
-[0.85, 1.35]. These numbers were chosen to be reasonable, not fitted, and the
-plan's `notes` field says so on every run.
+bonds map to the `fast`, `balanced` and `accurate` ACO presets, with the
+colony count scaled by `(box volume / 8000 Å³)^0.25` clamped to [0.85, 1.35].
+The preset assignment follows Vina-ACO's own description of what each preset
+is for; the colony counts and bias levels were chosen to be reasonable, not
+fitted, and the plan's `notes` field says so on every run.
 
-`TrainedSelector` replaces it. The sweep runs every configuration in
-`grid.DEFAULT_GRID` on every complex. For each configuration,
+`TrainedSelector` replaces it. The sweep runs every configuration in `grid.DEFAULT_GRID` — the three presets
+crossed with colony counts and bias levels — on every complex. For each configuration,
 `train_selector.py` fits a ridge-damped logistic regression for
 P(top-1 ≤ cutoff) and a ridge regression for runtime, over the descriptors in
 `planner.FEATURE_ORDER`. Coefficients are fitted on standardised features and
@@ -148,3 +189,5 @@ baseline the selector has to beat to be worth having.
 - No PoseBusters checks, so a pose within 2 Å may still be physically
   implausible.
 - A single spherical bias well, not a pharmacophore.
+- Each biased stage rewrites the whole map set; on large boxes that is real
+  I/O. Base maps are computed once per complex and reused across seeds.
